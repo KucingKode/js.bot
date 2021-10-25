@@ -1,26 +1,80 @@
 require('dotenv').config()
 
+const ts = require('typescript')
+const cs = require('coffeescript')
+
+const fetch = require('node-fetch')
+
 const Discord = require('discord.js')
-const safeEval = require('safe-eval')
+const {VM} = require('vm2')
 const client = new Discord.Client()
 
 const pkg = require('../package.json')
 
-const codeRegex = /(?:```(?:(?:js)|(?:javascript))\n+)|`([.\s\S<>!@]+)``?`?/
+const codeRegex = {
+  inline: /`([.\s\S<>!@]+)`/,
+  js: /(?:```(?:js)|(?:javascript))\n+([.\s\S<>!@]+)```/,
+  ts: /(?:```(?:ts)|(?:typescript))\n+([.\s\S<>!@]+)```/,
+  cs: /(?:```(?:cs)|(?:coffeescript))\n+([.\s\S<>!@]+)```/
+}
 
-client.on('ready', async () => {
+const executeAction = {
+  inline: async (code, sandbox) => {
+    return await execute(code, sandbox)
+  },
+
+  js: async (code, sandbox) => {
+    return await execute(code, sandbox)
+  },
+
+  ts: async (code, sandbox) => {
+    let jsCode
+
+    try {
+      jsCode = ts.transpileModule(code, {
+        compilerOptions: {
+          target: ts.ScriptTarget.ES2020,
+          module: ts.ModuleKind.ES2020
+        }
+      }).outputText
+    } catch (err) {
+      return `COMPILE ERR! ${err.message}`
+    }
+
+    return await execute(jsCode, sandbox)
+  },
+
+  cs: async (code, sandbox) => {
+    let jsCode
+
+    try {
+      jsCode = cs.compile(code)
+    } catch (err) {
+      return `COMPILE ERR! ${err.message}`
+    }
+
+    return await execute(jsCode, sandbox)
+  }
+}
+
+client.on('ready', () => {
   console.log(`[Client] ready as ${client.user.username}!`)
-  client.user.setActivity('jseval')
+  client.user.setActivity('jsexec')
 })
 
-client.on('message', (msg) => {
-  if (msg.content === 'jseval help' || msg.content === 'jseval') {
+client.on('message', async (msg) => {
+  if (msg.content === 'jsexec help' || msg.content === 'jsexec') {
     msg.reply(
       '```js\n' +
         'const me = {\n' +
-        '  name: "JSEval",\n' +
-        `  version: "v${pkg.version}",\n` +
-        '  hobby: "execute some javascript code"\n' +
+        ' name: "JSExec",\n' +
+        ` version: "v${pkg.version}",\n` +
+        ' hobby: "execute some code"\n' +
+        ' languages: [\n' +
+        '   "javascript",\n' +
+        '   "typescript",\n' +
+        '   "coffeescript",\n' +
+        ' ]\n' +
         '}' +
         '```'
     )
@@ -28,26 +82,53 @@ client.on('message', (msg) => {
     return
   }
 
-  if (msg.author.bot || !msg.content.startsWith('jseval')) return
+  if (msg.author.bot || !msg.content.startsWith('jsexec')) return
 
   console.log('[Client] messaged!')
 
-  const code = msg.content.match(codeRegex, '$1')
-  if (!code) return
+  const type = getScriptType(msg.content)
+  if (!type || !codeRegex[type]) return
 
-  try {
-    const result = safeEval(code[1], {
-      msg
-    })
-    msg.reply('```js\n' + result + '\n```')
-  } catch (err) {
-    msg.reply('```excel\n' + 'ERR! ' + err.message + '\n```')
-  }
+  let match = msg.content.match(codeRegex[type], '$1')
+
+  if (match && match[1]) return msg.reply(await executeAction[type](match[1], {msg}))
 })
-
-function trim(str) {
-  return str.replace(/\n\s{2,}/g, '\n')
-}
 
 client.login(process.env.TOKEN)
 console.log('[Client] logged in!')
+
+async function execute(code, sandbox) {
+  const logs = []
+
+  const vmConsole = {
+    log: (...string) => logs.push(string.map((str) => JSON.stringify(str, null, 2)).join(' '))
+  }
+
+  const vm = new VM({
+    timeout: 5000,
+    sandbox: {
+      ...sandbox,
+      console: vmConsole,
+      fetch: fetch
+    }
+  })
+
+  try {
+    await vm.run(code)
+
+    return '```js\n' + logs.join('\n') + '\n```'
+  } catch (err) {
+    return '```excel\n' + err.message + '\n```'
+  }
+}
+
+function getScriptType(msg) {
+  if (msg.indexOf('```js') > -1) return 'js'
+  if (msg.indexOf('```javascript') > -1) return 'js'
+  if (msg.indexOf('```ts') > -1) return 'ts'
+  if (msg.indexOf('```typescript') > -1) return 'ts'
+  if (msg.indexOf('```cs') > -1) return 'cs'
+  if (msg.indexOf('```coffeescript') > -1) return 'cs'
+
+  return 'inline'
+}
