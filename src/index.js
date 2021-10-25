@@ -31,12 +31,12 @@ const executeAction = {
     let jsCode
 
     try {
-      jsCode = ts.transpileModule(code, {
-        compilerOptions: {
-          target: ts.ScriptTarget.ES2020,
-          module: ts.ModuleKind.ES2020
-        }
-      }).outputText
+      jsCode = ts.transpile(code, {
+        target: ts.ScriptTarget.ES2020,
+        module: ts.ModuleKind.ES2020,
+        strict: true,
+        alwaysStrict: true
+      })
     } catch (err) {
       return `COMPILE ERR! ${err.message}`
     }
@@ -67,14 +67,15 @@ client.on('message', async (msg) => {
     msg.reply(
       '```js\n' +
         'const me = {\n' +
-        ' name: "JSExec",\n' +
-        ` version: "v${pkg.version}",\n` +
-        ' hobby: "execute some code"\n' +
-        ' languages: [\n' +
-        '   "javascript",\n' +
-        '   "typescript",\n' +
-        '   "coffeescript",\n' +
-        ' ]\n' +
+        '  name: "JSExec",\n' +
+        `  version: "v${pkg.version}",\n` +
+        '  hobby: "execute some code",\n' +
+        '  repo: "https://github.com/KucingKode/jsexec",\n' +
+        '  languages: [\n' +
+        '    "javascript",\n' +
+        '    "typescript",\n' +
+        '    "coffeescript",\n' +
+        '  ]\n' +
         '}' +
         '```'
     )
@@ -101,7 +102,23 @@ async function execute(code, sandbox) {
   const logs = []
 
   const vmConsole = {
-    log: (...string) => logs.push(string.map((str) => JSON.stringify(str, null, 2)).join(' '))
+    log: (...newLog) => {
+      logs.push(
+        newLog
+          .map((log) => {
+            if (typeof log === 'object') {
+              return JSON.stringify(log)
+            }
+
+            return log
+          })
+          .join(' ')
+      )
+    }
+  }
+
+  const vmAlert = (alert) => {
+    vmConsole.log('------\n' + alert + '\n------')
   }
 
   const vm = new VM({
@@ -109,12 +126,16 @@ async function execute(code, sandbox) {
     sandbox: {
       ...sandbox,
       console: vmConsole,
-      fetch: fetch
+      fetch: fetch,
+      alert: vmAlert,
+      Promise
     }
   })
 
   try {
     await vm.run(code)
+
+    if (logs.length === 0) logs.push(' ')
 
     return '```js\n' + logs.join('\n') + '\n```'
   } catch (err) {
