@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0-beta",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "discord.js": "12.5.1",
+    "dotenv": "^10.0.0",
+    "safe-eval": "^0.4.1"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.13"
+  }
+}
