@@ -107,7 +107,7 @@ async function execute(code, sandbox) {
         newLog
           .map((log) => {
             if (typeof log === 'object') {
-              return JSON.stringify(log)
+              return JSON.stringify(log, null, 2)
             }
 
             return log
